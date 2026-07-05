@@ -1,0 +1,11 @@
+version = "1.1.0"
+channel = "stable"
+published = "2026-07-04T16:21:00Z"
+
+[[artifacts]]
+key = "universal"
+platforms = ["*"]
+url = "https://github.com/meow-sci/purrtty/releases/download/v1.1.0/purrTTY-1.1.0.zip"
+size = 24367747
+sha256 = "331b3ab82b669f45417cc74c6e55593727c8e12b0db83f8dc2f6acc232c2e4b0"
+root = "purrTTY"

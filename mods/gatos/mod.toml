@@ -1,0 +1,9 @@
+id = "gatOS"
+name = "gatOS"
+summary = "A real, minimal Alpine Linux running in a QEMU microVM, surfaced through purrTTY terminals, with live KSA vehicle telemetry exposed as a /sim filesystem."
+authors = ["meow sci"]
+license = "MIT"
+repository = "https://github.com/meow-sci/gatOS"
+homepage = "https://meow.science.fail/gatOS/"
+tags = ["linux", "telemetry", "flight-computer", "scripting"]
+owners = ["alex-sherwin"]

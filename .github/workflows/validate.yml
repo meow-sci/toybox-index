@@ -1,0 +1,107 @@
+# PR validation + self-service auto-merge.
+#
+# Security model: this runs on pull_request_target (so the bot token can
+# approve/merge), therefore ALL EXECUTED CODE comes from the BASE branch.
+# The PR's head is checked out into ./head as pure data (mods/** TOML +
+# markdown); scripts/ and workflows from the head are never executed. The
+# validate script reads ownership from the base branch, so a PR cannot grant
+# itself publishing rights.
+#
+# Auto-merge fires only when: the PR touches nothing outside mods/**, every
+# touched mod already exists on the base branch, the author is in that mod's
+# owners list (on base), owners lists are unchanged, and full validation
+# (schema + artifact digests + manifest generation) is green. Everything else
+# waits for the admin team (routed via CODEOWNERS).
+
+name: validate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      ownership: ${{ steps.validate.outputs.ownership }}
+    steps:
+      # Trusted code: base branch.
+      - name: Checkout base (scripts)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          fetch-depth: 0
+
+      # Untrusted data: PR head, checked out separately.
+      - name: Checkout head (data)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          fetch-depth: 0
+
+      - name: Assemble validation tree (base scripts + head data)
+        run: |
+          mkdir -p work
+          cp -r base/scripts base/package.json base/package-lock.json work/
+          cp -r head/mods work/mods
+          cd head
+          git fetch origin ${{ github.event.pull_request.base.sha }}
+          git diff --name-only ${{ github.event.pull_request.base.sha }}...HEAD > ../work/changed-files.txt
+          echo "Changed files:" && cat ../work/changed-files.txt
+          # Ownership reads owners from the base branch via git show.
+          cp -r ../base/.git ../work/.git
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install script dependencies
+        working-directory: work
+        run: npm ci --no-audit --no-fund
+
+      - name: Restore artifact manifest cache
+        uses: actions/cache@v4
+        with:
+          path: work/cache
+          key: artifact-manifests-${{ hashFiles('head/mods/**/releases/*.toml') }}
+          restore-keys: artifact-manifests-
+
+      - name: Validate (schema + governance + artifact digests)
+        id: validate
+        working-directory: work
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/validate.ts \
+            --artifacts \
+            --pr-author '${{ github.event.pull_request.user.login }}' \
+            --base-ref '${{ github.event.pull_request.base.sha }}' \
+            --changed changed-files.txt
+
+      - name: Check CODEOWNERS is current
+        working-directory: work
+        run: node scripts/gen-codeowners.ts --check || echo "::warning::CODEOWNERS needs regeneration (npm run codeowners) — will be refreshed on publish"
+
+  automerge:
+    needs: validate
+    if: needs.validate.outputs.ownership == 'ok'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve and merge (self-service publish)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr review "$PR" --repo "$GITHUB_REPOSITORY" --approve \
+            --body "Automated approval: author owns every touched mod and validation is green."
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --auto

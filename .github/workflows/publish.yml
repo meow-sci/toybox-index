@@ -1,0 +1,63 @@
+# Compile the index and publish it to GitHub Pages.
+#
+# Output:
+#   v1/index.json                        — the catalog (readmes inlined)
+#   v1/manifests/<slug>/<v>.<key>.json   — per-file artifact manifests
+#
+# Artifact downloads are content-addressed-cached (cache/manifests/<sha256>),
+# so each release artifact is downloaded once ever, not once per publish.
+
+name: publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install script dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Restore artifact manifest cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: artifact-manifests-${{ hashFiles('mods/**/releases/*.toml') }}
+          restore-keys: artifact-manifests-
+
+      - name: Compile index (verify artifacts, generate manifests)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/compile.ts
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

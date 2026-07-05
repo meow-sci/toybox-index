@@ -1,0 +1,8 @@
+id = "purrTTY"
+name = "purrTTY"
+summary = "A terminal emulator for KSA with mostly VT100/xterm compatibility"
+authors = ["Alex Sherwin"]
+license = "MIT"
+repository = "https://github.com/meow-sci/purrtty"
+tags = ["terminal", "utility", "shell"]
+owners = ["alex-sherwin"]

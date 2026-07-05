@@ -1,0 +1,14 @@
+# GENERATED FILE — regenerate with: npm run codeowners
+#
+# The admin team reviews everything the publish bot does not auto-merge
+# (new mod registrations, owners changes, scripts/ and workflow changes).
+# Per-mod publishing rights are data, not CODEOWNERS entries: each mod's
+# owners are listed in mods/<slug>/mod.toml and enforced by
+# scripts/validate.ts in the auto-merge workflow (publishers are not org
+# members, so GitHub CODEOWNERS cannot grant them review power).
+
+* @meow-sci/toybox-admins
+
+# Per-mod publishers (informational; enforced by the bot):
+#   mods/gatos/ → @alex-sherwin
+#   mods/purrtty/ → @alex-sherwin

@@ -1,0 +1,24 @@
+version = "1.1.0"
+channel = "stable"
+published = "2026-06-29T01:59:27Z"
+
+[[dependencies]]
+id = "purrTTY"
+range = "^1.0"
+optional = true
+
+[[artifacts]]
+key = "windows"
+platforms = ["windows"]
+url = "https://github.com/meow-sci/gatOS/releases/download/v1.1.0/gatOS-windows-1.1.0.zip"
+size = 144164735
+sha256 = "13708f3b0b19db7da81df6b52e700e50fe42650d2bc6b8129425723b62f33077"
+root = "gatOS"
+
+[[artifacts]]
+key = "linux"
+platforms = ["linux"]
+url = "https://github.com/meow-sci/gatOS/releases/download/v1.1.0/gatOS-linux-1.1.0.zip"
+size = 100036697
+sha256 = "c7555c1ccfa1cbc536cab02b70d5017f87b8e84508d0c72691958c1d05a60ccf"
+root = "gatOS"
