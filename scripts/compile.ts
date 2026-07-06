@@ -1,8 +1,14 @@
 /**
- * Compile the source tree into the published index:
+ * Compile the source tree into the published index. The layout is
+ * maven-style: one central discovery document plus convention-based
+ * per-mod files fetched on demand:
  *
- *   dist/v1/index.json                                (the catalog, readmes inlined)
- *   dist/v1/manifests/<slug>/<version>.<key>.json     (per-file manifests)
+ *   dist/v1/index.json                            central catalog: identity,
+ *                                                 summaries, tags, releases —
+ *                                                 everything searchable, no bulk
+ *   dist/v1/mods/<slug>/readme.md                 rich readme (lazy-fetched)
+ *   dist/v1/mods/<slug>/manifests/<version>.<artifactKey>.json
+ *                                                 per-file artifact manifests
  *
  * Artifacts are verified + manifested via the content-addressed cache
  * (cache/manifests/<sha256>.json), so unchanged artifacts are never
@@ -68,7 +74,7 @@ for (const mod of mods) {
   for (const release of sortReleases(mod)) {
     const artifacts = []
     for (const artifact of release.artifacts) {
-      const manifestRel = `manifests/${mod.slug}/${release.version}.${artifact.key}.json`
+      const manifestRel = `mods/${mod.slug}/manifests/${release.version}.${artifact.key}.json`
       if (!skipArtifacts) {
         const manifest = await verifyAndManifest(mod, release, artifact, cacheDir, {
           token,
@@ -102,6 +108,13 @@ for (const mod of mods) {
       artifacts,
     })
   }
+  let readmePath: string | undefined
+  if (mod.readme) {
+    readmePath = `mods/${mod.slug}/readme.md`
+    const readmeFile = join(outDir, 'v1', readmePath)
+    mkdirSync(dirname(readmeFile), { recursive: true })
+    writeFileSync(readmeFile, mod.readme)
+  }
   indexMods.push({
     id: mod.id,
     name: mod.name,
@@ -112,7 +125,7 @@ for (const mod of mods) {
     ...(mod.homepage ? { homepage: mod.homepage } : {}),
     tags: mod.tags,
     owners: mod.owners,
-    ...(mod.readme ? { readme: mod.readme } : {}),
+    ...(readmePath ? { readmePath } : {}),
     releases,
   })
 }
