@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { loadTree, type SourceMod } from './lib/schema.ts'
 import { lookupGithubAsset, verifyAndManifest } from './lib/artifacts.ts'
+import { generateListings } from './lib/listing.ts'
 
 const args = process.argv.slice(2)
 const opt = (name: string): string | undefined => {
@@ -139,11 +140,17 @@ const index = {
 
 mkdirSync(join(outDir, 'v1'), { recursive: true })
 writeFileSync(join(outDir, 'v1', 'index.json'), JSON.stringify(index))
-// A tiny landing page so the Pages root isn't a 404.
-writeFileSync(
-  join(outDir, 'index.html'),
-  '<!doctype html><title>toybox-index</title><p>Compiled KSA mod index. See <a href="v1/index.json">v1/index.json</a>.</p>',
-)
+
+// Make the whole published tree browsable: a self-contained index.html in
+// every directory (GitHub Pages serves no listings of its own).
+const pages = generateListings(outDir, {
+  siteTitle: 'toybox-index',
+  rootBlurb:
+    'The compiled <a href="https://github.com/meow-sci/toybox-index">toybox-index</a> — ' +
+    'machine consumers start at <a href="v1/index.json">v1/index.json</a>; ' +
+    'everything below is browsable by hand.',
+})
+
 console.log(
-  `\n✓ wrote ${join(outDir, 'v1', 'index.json')} (${indexMods.length} mods, ${indexMods.reduce((n, m) => n + m.releases.length, 0)} releases)`,
+  `\n✓ wrote ${join(outDir, 'v1', 'index.json')} (${indexMods.length} mods, ${indexMods.reduce((n, m) => n + m.releases.length, 0)} releases, ${pages} listing pages)`,
 )

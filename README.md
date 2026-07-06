@@ -19,6 +19,12 @@ The layout is maven-style: one small discovery document plus convention-based
 per-mod files fetched on demand, so the index download stays tiny no matter
 how large the catalog grows.
 
+The published tree is also **human-browsable**: every directory gets a
+generated `index.html` — fully self-contained HTML+CSS, no JavaScript, no
+external requests — with breadcrumb navigation, folder traversal, and
+per-file view/download links, like a classic autoindex or maven repository
+browser.
+
 ## Registering a mod
 
 Open a PR adding one folder:
