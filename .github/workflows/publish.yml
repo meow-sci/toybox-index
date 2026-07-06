@@ -11,11 +11,7 @@ name: publish
 
 on:
   push:
-    # claude/ksa-mod-manager-design-ivhb2r is the repo's current default
-    # branch (first branch pushed); drop it here once the default moves to
-    # main. The github-pages environment only allows deploys from the
-    # default branch, so the trigger must match whatever that is.
-    branches: [main, claude/ksa-mod-manager-design-ivhb2r]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
