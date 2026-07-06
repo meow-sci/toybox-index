@@ -11,7 +11,9 @@ compiled index to GitHub Pages:
 ```
 v1/index.json                              the central catalog: identity, summaries,
                                            tags, releases — everything searchable
-v1/mods/<slug>/readme.md                   rich markdown, lazy-fetched by the app
+v1/mods/<slug>/readme.md                   the CURRENT readme, lazy-fetched by the app
+v1/mods/<slug>/readmes/<version>.md        readme snapshot as of each release's
+                                           registration commit (from git history)
 v1/mods/<slug>/manifests/<v>.<key>.json    per-file sha256 manifests per artifact
 v1/mods/<slug>/artifacts/<v>.<key>.zip     mirrored artifact bytes for the mod's
                                            newest mirror_versions releases
@@ -20,6 +22,12 @@ v1/mods/<slug>/artifacts/<v>.<key>.zip     mirrored artifact bytes for the mod's
 The layout is maven-style: one small discovery document plus convention-based
 per-mod files fetched on demand, so the index download stays tiny no matter
 how large the catalog grows.
+
+**The vendoring convention**: every per-version datum lives at
+`v1/mods/<slug>/<kind>/<version>[.<artifactKey>].<ext>` — kinds today are
+`readmes/`, `manifests/`, and `artifacts/`, and any future per-version data
+must follow the same shape. The current readme additionally stays at
+`mods/<slug>/readme.md` as a stable "latest" convenience path.
 
 The published tree is also **human-browsable**: every directory gets a
 generated `index.html` — fully self-contained HTML+CSS, no JavaScript, no

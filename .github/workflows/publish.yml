@@ -28,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history: compile snapshots each release's readme from the
+          # commit that registered it (mods/<slug>/readmes/<version>.md).
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
