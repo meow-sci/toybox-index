@@ -11,3 +11,6 @@ owners = ["alex-sherwin"]
 # are ~100–145 MB, above the 50 MiB default artifact ceiling. Raising this is
 # a registration-level decision: changes to it require admin review.
 max_artifact_bytes = 209715200 # 200 MiB
+# Mirror the newest N releases into the published Pages site (same-origin
+# downloads for the browser app). Registration-level: admin-reviewed.
+mirror_versions = 5
