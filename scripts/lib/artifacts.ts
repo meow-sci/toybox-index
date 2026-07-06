@@ -103,11 +103,36 @@ export async function verifyAndManifest(
   log(`  downloading ${artifact.url} (${(artifact.size / 1024 / 1024).toFixed(1)} MB)…`)
   const res = await fetch(artifact.url, { redirect: 'follow' })
   if (!res.ok) throw new ArtifactError(`${release.file}: HTTP ${res.status} downloading ${artifact.url}`)
-  const bytes = new Uint8Array(await res.arrayBuffer())
-  if (bytes.byteLength !== artifact.size) {
+  if (!res.body) throw new ArtifactError(`${release.file}: empty response body from ${artifact.url}`)
+  // Self-protection: never buffer past the declared size (which schema
+  // validation has already capped by the mod's registered ceiling) — abort
+  // the stream the moment a server over-sends instead of trusting
+  // Content-Length or buffering unbounded data.
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > artifact.size) {
+      await reader.cancel().catch(() => {})
+      throw new ArtifactError(
+        `${release.file}: ${artifact.url} sent more than the declared ${artifact.size} bytes — aborted`,
+      )
+    }
+    chunks.push(value)
+  }
+  if (received !== artifact.size) {
     throw new ArtifactError(
-      `${release.file}: ${artifact.url} is ${bytes.byteLength} bytes, declared ${artifact.size}`,
+      `${release.file}: ${artifact.url} is ${received} bytes, declared ${artifact.size}`,
     )
+  }
+  const bytes = new Uint8Array(received)
+  let offset = 0
+  for (const c of chunks) {
+    bytes.set(c, offset)
+    offset += c.byteLength
   }
   const digest = createHash('sha256').update(bytes).digest('hex')
   if (digest !== artifact.sha256) {

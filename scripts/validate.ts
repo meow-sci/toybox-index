@@ -113,6 +113,17 @@ if (prAuthor && changed.length > 0) {
         verdict = 'new-mod'
         break
       }
+      // Same for the artifact size ceiling: a release PR must not be able to
+      // raise its own limit — max_artifact_bytes is a registration-level
+      // setting, changed only under admin review.
+      if (headMod && (headMod.maxArtifactBytes ?? null) !== (baseIdentity.maxArtifactBytes ?? null)) {
+        console.log(
+          `  governance: mods/${slug} max_artifact_bytes changed ` +
+            `(${baseIdentity.maxArtifactBytes ?? 'default'} → ${headMod.maxArtifactBytes ?? 'default'}) — human review required`,
+        )
+        verdict = 'new-mod'
+        break
+      }
     }
   }
   output('ownership', verdict)

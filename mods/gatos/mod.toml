@@ -7,3 +7,7 @@ repository = "https://github.com/meow-sci/gatOS"
 homepage = "https://meow.science.fail/gatOS/"
 tags = ["linux", "telemetry", "flight-computer", "scripting"]
 owners = ["alex-sherwin"]
+# gatOS bundles an Alpine guest image and (on Windows) a full QEMU — its zips
+# are ~100–145 MB, above the 50 MiB default artifact ceiling. Raising this is
+# a registration-level decision: changes to it require admin review.
+max_artifact_bytes = 209715200 # 200 MiB

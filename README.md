@@ -60,7 +60,20 @@ Conventions (validated by CI):
 - the folder slug here is the lowercase mod id; the release file name is
   `<version>.toml`; versions are semver;
 - the sha256 is of the zip itself (GitHub shows it as the asset digest, or run
-  `sha256sum MyMod-1.0.0.zip`).
+  `sha256sum MyMod-1.0.0.zip`);
+- **artifacts are capped at 50 MiB by default.** A mod that genuinely ships
+  bigger payloads declares a higher ceiling in its `mod.toml`:
+
+  ```toml
+  max_artifact_bytes = 209715200 # 200 MiB
+  ```
+
+  The ceiling is registration-level: setting or changing it requires admin
+  review (like `owners` changes — a release PR cannot raise its own limit),
+  and there is an absolute 2 GiB maximum no metadata can override. CI also
+  aborts any artifact download the moment it exceeds the declared size, so
+  over-sending servers or false size claims cannot make CI buffer unbounded
+  data.
 
 Dependencies (optional) map 1:1 onto StarMap semantics plus a version range:
 
@@ -81,7 +94,8 @@ optional = true        # StarMap Optional: loads without it, validated when pres
   generation, and an ownership check (owners are read from the *base* branch,
   so a PR cannot grant itself rights). No org membership needed, no waiting
   on humans.
-- **Changing `owners`, or touching anything outside `mods/**`**: admin review.
+- **Changing `owners` or `max_artifact_bytes`, or touching anything outside
+  `mods/**`**: admin review.
 
 `CODEOWNERS` is generated (`npm run codeowners`) — GitHub only honors
 code-owner entries for users with write access, so per-mod ownership is

@@ -13,6 +13,25 @@ import { parse as parseToml } from 'smol-toml'
 export type Platform = 'windows' | 'linux' | 'macos'
 export const ALL_PLATFORMS: Platform[] = ['windows', 'linux', 'macos']
 
+/**
+ * Artifact size policy (CI + user self-protection).
+ *
+ * Every artifact defaults to a 50 MiB ceiling. A mod that genuinely ships
+ * bigger payloads must declare `max_artifact_bytes` in its mod.toml — a
+ * registration-level decision: changing it is treated like an owners change
+ * (admin review, never auto-merged), so a release PR cannot silently raise
+ * its own ceiling. HARD_MAX_ARTIFACT_BYTES is an absolute cap no metadata
+ * can override; the artifact verifier additionally aborts any download the
+ * moment it exceeds the declared size, so CI never streams unbounded data
+ * regardless of what a PR claims.
+ */
+export const DEFAULT_MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
+export const HARD_MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024
+
+export function effectiveMaxArtifactBytes(mod: Pick<SourceMod, 'maxArtifactBytes'>): number {
+  return Math.min(mod.maxArtifactBytes ?? DEFAULT_MAX_ARTIFACT_BYTES, HARD_MAX_ARTIFACT_BYTES)
+}
+
 export interface SourceMod {
   slug: string
   id: string
@@ -24,6 +43,8 @@ export interface SourceMod {
   homepage?: string
   tags: string[]
   owners: string[]
+  /** Per-registration artifact size ceiling override (bytes). */
+  maxArtifactBytes?: number
   readme?: string
   releases: SourceRelease[]
 }
@@ -114,6 +135,26 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
       throw new ValidationError(file, `"${key}" must be an https URL`)
     }
   }
+  let maxArtifactBytes: number | undefined
+  if (doc.max_artifact_bytes !== undefined && doc.max_artifact_bytes !== null) {
+    const v = doc.max_artifact_bytes
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+      throw new ValidationError(file, '"max_artifact_bytes" must be a positive integer (bytes)')
+    }
+    if (v > HARD_MAX_ARTIFACT_BYTES) {
+      throw new ValidationError(
+        file,
+        `"max_artifact_bytes" (${v}) exceeds the absolute ceiling of ${HARD_MAX_ARTIFACT_BYTES} bytes (2 GiB)`,
+      )
+    }
+    if (v <= DEFAULT_MAX_ARTIFACT_BYTES) {
+      throw new ValidationError(
+        file,
+        `"max_artifact_bytes" (${v}) is not above the ${DEFAULT_MAX_ARTIFACT_BYTES}-byte default — remove it`,
+      )
+    }
+    maxArtifactBytes = v
+  }
   return {
     id,
     name: optString(file, doc, 'name') ?? id,
@@ -124,6 +165,7 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
     homepage: optString(file, doc, 'homepage'),
     tags: strArray(file, doc, 'tags'),
     owners,
+    maxArtifactBytes,
   }
 }
 
@@ -282,6 +324,25 @@ export function loadTree(rootDir: string): SourceMod[] {
     }
 
     mods.push({ slug, ...identity, readme, releases })
+  }
+
+  // Artifact size policy: every artifact must fit the mod's registered
+  // ceiling (50 MiB default, mod.toml max_artifact_bytes to override).
+  for (const m of mods) {
+    const limit = effectiveMaxArtifactBytes(m)
+    for (const rel of m.releases) {
+      for (const a of rel.artifacts) {
+        if (a.size > limit) {
+          throw new ValidationError(
+            rel.file,
+            `artifact "${a.key}" is ${a.size} bytes, above this mod's ${limit}-byte ceiling. ` +
+              (m.maxArtifactBytes === undefined
+                ? `Large mods must declare max_artifact_bytes in mods/${m.slug}/mod.toml (admin-reviewed).`
+                : `Raise max_artifact_bytes in mods/${m.slug}/mod.toml (admin-reviewed).`),
+          )
+        }
+      }
+    }
   }
 
   // Cross-mod checks: dependency/conflict targets should exist in the index.
