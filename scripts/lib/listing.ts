@@ -34,36 +34,39 @@ function formatSize(n: number): string {
 
 const STYLE = `
 :root { color-scheme: light dark; --fg: #1c1f24; --dim: #6b7280; --bg: #ffffff;
-  --raised: #f3f4f6; --border: #e5e7eb; --accent: #2563eb; }
+  --raised: #f3f4f6; --hover: #e8eaee; --border: #e5e7eb; --accent: #2563eb; }
 @media (prefers-color-scheme: dark) {
   :root { --fg: #e6e8ec; --dim: #9aa0ac; --bg: #14161a; --raised: #1d2026;
-    --border: #32363f; --accent: #7aa2f7; }
+    --hover: #262a32; --border: #32363f; --accent: #7aa2f7; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg);
   font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; }
 main { max-width: 860px; margin: 0 auto; padding: 24px 20px 60px; }
 h1 { font-size: 18px; margin: 0 0 4px; }
-h1 a, td a { color: var(--accent); text-decoration: none; }
-h1 a:hover, td a:hover { text-decoration: underline; }
+h1 a, .crumbs a, .blurb a { color: var(--accent); text-decoration: none; }
+h1 a:hover, .crumbs a:hover, .blurb a:hover { text-decoration: underline; }
 .crumbs { color: var(--dim); margin-bottom: 18px; word-break: break-all; }
 .blurb { color: var(--dim); margin: 0 0 18px; }
-table { width: 100%; border-collapse: collapse; background: var(--raised);
-  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-th { text-align: left; font-weight: 600; color: var(--dim); font-size: 12px;
-  padding: 8px 14px; border-bottom: 1px solid var(--border); }
-td { padding: 7px 14px; border-bottom: 1px solid var(--border); }
-tr:last-child td { border-bottom: none; }
-td.size, th.size { text-align: right; white-space: nowrap; color: var(--dim);
-  font-variant-numeric: tabular-nums; width: 1%; }
-td.dl, th.dl { text-align: right; width: 1%; white-space: nowrap; }
-td.dl a { font-size: 12px; border: 1px solid var(--border); border-radius: 6px;
-  padding: 1px 8px; color: var(--dim); }
-td.dl a:hover { color: var(--accent); border-color: var(--accent);
-  text-decoration: none; }
+.listing { display: grid; grid-template-columns: 1fr auto auto;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; }
+.hd { font-weight: 600; color: var(--dim); font-size: 12px; padding: 8px 14px; }
+.cell { border-top: 1px solid var(--border); display: flex; align-items: center; }
+.name { padding: 7px 14px; color: var(--accent); text-decoration: none;
+  word-break: break-all; }
+a.name:hover { background: var(--hover); }
+.size { padding: 7px 14px; justify-content: flex-end; white-space: nowrap;
+  color: var(--dim); font-variant-numeric: tabular-nums; }
+.dl { padding: 7px 14px; justify-content: flex-end; }
+.dl a { font-size: 12px; border: 1px solid var(--border); border-radius: 6px;
+  padding: 1px 8px; color: var(--dim); text-decoration: none; white-space: nowrap; }
+.dl a:hover { color: var(--accent); border-color: var(--accent); }
+.up { font-family: ui-monospace, monospace; }
 .dir::before { content: '📁 '; }
 .file::before { content: '📄 '; }
-.up::before { content: '↩ '; }
+.empty { padding: 7px 14px; color: var(--dim); grid-column: 1 / -1;
+  border-top: 1px solid var(--border); }
 footer { color: var(--dim); font-size: 12px; margin-top: 16px; }
 `.trim()
 
@@ -82,25 +85,28 @@ function renderListing(
     }),
   ].join(' / ')
 
+  // Each row is three grid cells; the whole name cell IS the link.
+  const row = (nameCell: string, size: string, dl: string): string =>
+    `${nameCell}<span class="cell size">${size}</span><span class="cell dl">${dl}</span>`
   const rows: string[] = []
   if (relPath.length > 0) {
-    rows.push(`<tr><td colspan="3"><a class="up" href="../">Parent directory</a></td></tr>`)
+    rows.push(row(`<a class="cell name up" href="../">../</a>`, '—', ''))
   }
   for (const d of dirs) {
     const href = `${encodeURIComponent(d)}/`
-    rows.push(
-      `<tr><td><a class="dir" href="${href}">${escapeHtml(d)}/</a></td><td class="size">—</td><td class="dl"></td></tr>`,
-    )
+    rows.push(row(`<a class="cell name dir" href="${href}">${escapeHtml(d)}/</a>`, '—', ''))
   }
   for (const f of files) {
     const href = encodeURIComponent(f.name)
     rows.push(
-      `<tr><td><a class="file" href="${href}">${escapeHtml(f.name)}</a></td>` +
-        `<td class="size">${formatSize(f.size)}</td>` +
-        `<td class="dl"><a href="${href}" download>download</a></td></tr>`,
+      row(
+        `<a class="cell name file" href="${href}">${escapeHtml(f.name)}</a>`,
+        formatSize(f.size),
+        `<a href="${href}" download>download</a>`,
+      ),
     )
   }
-  if (rows.length === 0) rows.push('<tr><td colspan="3">(empty)</td></tr>')
+  if (rows.length === 0) rows.push('<span class="empty">(empty)</span>')
 
   const blurb =
     relPath.length === 0 && opts.rootBlurb ? `<p class="blurb">${opts.rootBlurb}</p>` : ''
@@ -118,13 +124,11 @@ function renderListing(
 <h1>Index of ${escapeHtml(here)}</h1>
 <p class="crumbs">${crumbs}</p>
 ${blurb}
-<table>
-<thead><tr><th>Name</th><th class="size">Size</th><th class="dl"></th></tr></thead>
-<tbody>
+<div class="listing">
+<span class="hd">Name</span><span class="hd size">Size</span><span class="hd dl"></span>
 ${rows.join('\n')}
-</tbody>
-</table>
-<footer>Generated by toybox-index — every page is self-contained HTML+CSS.</footer>
+</div>
+<footer>toybox index browser</footer>
 </main>
 </body>
 </html>

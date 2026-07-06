@@ -6,7 +6,10 @@
  *   dist/v1/index.json                            central catalog: identity,
  *                                                 summaries, tags, releases —
  *                                                 everything searchable, no bulk
- *   dist/v1/mods/<slug>/readme.md                 rich readme (lazy-fetched)
+ *   dist/v1/mods/<slug>/readme.md                 CURRENT readme (lazy-fetched)
+ *   dist/v1/mods/<slug>/readmes/<version>.md      readme snapshot as of each
+ *                                                 release's registration commit
+ *                                                 (from git history)
  *   dist/v1/mods/<slug>/manifests/<version>.<artifactKey>.json
  *                                                 per-file artifact manifests
  *   dist/v1/mods/<slug>/artifacts/<version>.<artifactKey>.zip
@@ -15,6 +18,11 @@
  *                                                 releases (same-origin download
  *                                                 for the app — GitHub release
  *                                                 URLs are not browser-fetchable)
+ *
+ * THE vendoring convention: every per-version datum lives at
+ *   v1/mods/<slug>/<kind>/<version>[.<artifactKey>].<ext>
+ * (kinds today: readmes/, manifests/, artifacts/). New per-version data
+ * kinds MUST follow the same shape.
  *
  * Artifacts are verified + manifested via the content-addressed cache
  * (cache/manifests/<sha256>.json), so unchanged artifacts are never
@@ -32,6 +40,7 @@ import { copyFileSync } from 'node:fs'
 import { loadTree, type SourceMod } from './lib/schema.ts'
 import { ensureArtifactCached, lookupGithubAsset, verifyAndManifest } from './lib/artifacts.ts'
 import { generateListings } from './lib/listing.ts'
+import { allowedRecommends, auditReferences } from './lib/references.ts'
 
 const args = process.argv.slice(2)
 const opt = (name: string): string | undefined => {
@@ -50,6 +59,31 @@ function gitCommit(): string {
     return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   } catch {
     return 'unknown'
+  }
+}
+
+/**
+ * The mod's README as of the commit that first added a release file —
+ * i.e. what the readme said when that version was registered. Derived
+ * purely from git history, so the archive is reproducible from the repo
+ * alone (publish checks out full history). Falls back to the current
+ * readme when history is unavailable (fresh trees, scratch compiles).
+ */
+function readmeAtVersion(slug: string, version: string, currentReadme?: string): string | null {
+  try {
+    const commits = execFileSync(
+      'git',
+      ['log', '--reverse', '--format=%H', '--', `mods/${slug}/releases/${version}.toml`],
+      { encoding: 'utf8' },
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+    const first = commits[0]
+    if (!first) return currentReadme ?? null
+    return execFileSync('git', ['show', `${first}:mods/${slug}/README.md`], { encoding: 'utf8' })
+  } catch {
+    return currentReadme ?? null
   }
 }
 
@@ -74,6 +108,21 @@ function sortReleases(mod: SourceMod): SourceMod['releases'] {
 }
 
 const mods = loadTree(rootDir)
+
+// who_can_reference enforcement: a disallowed `required` reference must
+// never publish (it would ship broken installs); disallowed `recommends`
+// are filtered out of the compiled index.
+const referenceAudit = auditReferences(mods)
+if (referenceAudit.violations.length > 0) {
+  for (const v of referenceAudit.violations) {
+    console.error(`✖ ${v.file}: ${v.from} requires ${v.to}, disallowed by who_can_reference`)
+  }
+  process.exit(1)
+}
+for (const v of referenceAudit.filteredRecommends) {
+  console.log(`  filtered recommend: ${v.from} → ${v.to} (${v.file}) per who_can_reference`)
+}
+
 const indexMods = []
 let mirroredBytes = 0
 
@@ -125,13 +174,24 @@ for (const mod of mods) {
         ...(mirrorRel ? { mirror: mirrorRel } : {}),
       })
     }
+    // Per-version readme snapshot (the vendoring convention: readmes/<version>.md).
+    let releaseReadmePath: string | undefined
+    const snapshot = readmeAtVersion(mod.slug, release.version, mod.readme)
+    if (snapshot) {
+      releaseReadmePath = `mods/${mod.slug}/readmes/${release.version}.md`
+      const snapshotFile = join(outDir, 'v1', releaseReadmePath)
+      mkdirSync(dirname(snapshotFile), { recursive: true })
+      writeFileSync(snapshotFile, snapshot)
+    }
     releases.push({
       version: release.version,
       channel: release.channel,
       ...(release.published ? { publishedAt: release.published } : {}),
       ...(release.ksa ? { ksa: release.ksa } : {}),
       ...(release.notes ? { notes: release.notes } : {}),
-      dependencies: release.dependencies,
+      ...(releaseReadmePath ? { readmePath: releaseReadmePath } : {}),
+      required: release.required,
+      recommends: allowedRecommends(release, referenceAudit),
       conflicts: release.conflicts,
       artifacts,
     })

@@ -69,6 +69,10 @@ jobs:
         working-directory: work
         run: npm ci --no-audit --no-fund
 
+      - name: Unit tests (base-branch scripts)
+        working-directory: work
+        run: npm test
+
       - name: Restore artifact manifest cache
         uses: actions/cache@v4
         with:

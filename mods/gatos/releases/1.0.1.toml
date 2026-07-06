@@ -2,10 +2,10 @@ version = "1.0.1"
 channel = "stable"
 published = "2026-06-27T18:03:26Z"
 
-[[dependencies]]
+[[recommends]]
 id = "purrTTY"
 range = "^1.0"
-optional = true
+description = "gatOS terminal sessions open inside purrTTY windows when it is installed; without it the VM stays manageable from the gatOS menu."
 
 [[artifacts]]
 key = "windows"
