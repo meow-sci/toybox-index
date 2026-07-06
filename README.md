@@ -9,9 +9,15 @@ per-file manifests generated from the real archives) and publishes the
 compiled index to GitHub Pages:
 
 ```
-v1/index.json                        the catalog (identity, releases, readmes)
-v1/manifests/<slug>/<v>.<key>.json   per-file sha256 manifests per artifact
+v1/index.json                              the central catalog: identity, summaries,
+                                           tags, releases — everything searchable
+v1/mods/<slug>/readme.md                   rich markdown, lazy-fetched by the app
+v1/mods/<slug>/manifests/<v>.<key>.json    per-file sha256 manifests per artifact
 ```
+
+The layout is maven-style: one small discovery document plus convention-based
+per-mod files fetched on demand, so the index download stays tiny no matter
+how large the catalog grows.
 
 ## Registering a mod
 
