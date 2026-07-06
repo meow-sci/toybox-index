@@ -13,6 +13,8 @@ v1/index.json                              the central catalog: identity, summar
                                            tags, releases — everything searchable
 v1/mods/<slug>/readme.md                   rich markdown, lazy-fetched by the app
 v1/mods/<slug>/manifests/<v>.<key>.json    per-file sha256 manifests per artifact
+v1/mods/<slug>/artifacts/<v>.<key>.zip     mirrored artifact bytes for the mod's
+                                           newest mirror_versions releases
 ```
 
 The layout is maven-style: one small discovery document plus convention-based
@@ -85,7 +87,19 @@ Conventions (validated by CI):
   and there is an absolute 2 GiB maximum no metadata can override. CI also
   aborts any artifact download the moment it exceeds the declared size, so
   over-sending servers or false size claims cannot make CI buffer unbounded
-  data.
+  data;
+- **mirroring** — GitHub release downloads are not fetchable from browsers
+  (no CORS on the redirect chain), so the publish pipeline mirrors each
+  mod's newest releases into the Pages site, where the toybox app downloads
+  them same-origin:
+
+  ```toml
+  mirror_versions = 5    # newest N releases mirrored; 0/absent = none
+  ```
+
+  Also registration-level and admin-reviewed — the Pages site has a ~1 GB
+  budget, so mirror allocation is rationed by the admin team. Un-mirrored
+  releases still work everywhere via the app's guided-download fallback.
 
 Dependencies (optional) map 1:1 onto StarMap semantics plus a version range:
 
@@ -106,8 +120,8 @@ optional = true        # StarMap Optional: loads without it, validated when pres
   generation, and an ownership check (owners are read from the *base* branch,
   so a PR cannot grant itself rights). No org membership needed, no waiting
   on humans.
-- **Changing `owners` or `max_artifact_bytes`, or touching anything outside
-  `mods/**`**: admin review.
+- **Changing `owners`, `max_artifact_bytes`, or `mirror_versions`, or
+  touching anything outside `mods/**`**: admin review.
 
 `CODEOWNERS` is generated (`npm run codeowners`) — GitHub only honors
 code-owner entries for users with write access, so per-mod ownership is

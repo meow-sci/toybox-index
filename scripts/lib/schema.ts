@@ -45,6 +45,14 @@ export interface SourceMod {
   owners: string[]
   /** Per-registration artifact size ceiling override (bytes). */
   maxArtifactBytes?: number
+  /**
+   * How many of the mod's newest releases have their artifacts mirrored
+   * into the published Pages site (same-origin for the app — the only
+   * zero-infrastructure host that is browser-fetchable; GitHub release
+   * downloads do not speak CORS). 0/unset = no mirroring; registration-level
+   * setting, changed only under admin review (Pages budget is finite).
+   */
+  mirrorVersions?: number
   readme?: string
   releases: SourceRelease[]
 }
@@ -155,6 +163,14 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
     }
     maxArtifactBytes = v
   }
+  let mirrorVersions: number | undefined
+  if (doc.mirror_versions !== undefined && doc.mirror_versions !== null) {
+    const v = doc.mirror_versions
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 20) {
+      throw new ValidationError(file, '"mirror_versions" must be an integer between 0 and 20')
+    }
+    mirrorVersions = v
+  }
   return {
     id,
     name: optString(file, doc, 'name') ?? id,
@@ -166,6 +182,7 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
     tags: strArray(file, doc, 'tags'),
     owners,
     maxArtifactBytes,
+    mirrorVersions,
   }
 }
 

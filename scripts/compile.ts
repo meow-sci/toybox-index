@@ -9,6 +9,12 @@
  *   dist/v1/mods/<slug>/readme.md                 rich readme (lazy-fetched)
  *   dist/v1/mods/<slug>/manifests/<version>.<artifactKey>.json
  *                                                 per-file artifact manifests
+ *   dist/v1/mods/<slug>/artifacts/<version>.<artifactKey>.zip
+ *                                                 mirrored artifact bytes for the
+ *                                                 mod's newest mirror_versions
+ *                                                 releases (same-origin download
+ *                                                 for the app — GitHub release
+ *                                                 URLs are not browser-fetchable)
  *
  * Artifacts are verified + manifested via the content-addressed cache
  * (cache/manifests/<sha256>.json), so unchanged artifacts are never
@@ -22,8 +28,9 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
+import { copyFileSync } from 'node:fs'
 import { loadTree, type SourceMod } from './lib/schema.ts'
-import { lookupGithubAsset, verifyAndManifest } from './lib/artifacts.ts'
+import { ensureArtifactCached, lookupGithubAsset, verifyAndManifest } from './lib/artifacts.ts'
 import { generateListings } from './lib/listing.ts'
 
 const args = process.argv.slice(2)
@@ -68,11 +75,16 @@ function sortReleases(mod: SourceMod): SourceMod['releases'] {
 
 const mods = loadTree(rootDir)
 const indexMods = []
+let mirroredBytes = 0
 
 for (const mod of mods) {
-  console.log(`compiling ${mod.id} (${mod.releases.length} releases)…`)
+  const mirrorCount = skipArtifacts ? 0 : (mod.mirrorVersions ?? 0)
+  console.log(
+    `compiling ${mod.id} (${mod.releases.length} releases, mirroring newest ${mirrorCount})…`,
+  )
   const releases = []
-  for (const release of sortReleases(mod)) {
+  for (const [releaseIndex, release] of sortReleases(mod).entries()) {
+    const mirrorThis = releaseIndex < mirrorCount
     const artifacts = []
     for (const artifact of release.artifacts) {
       const manifestRel = `mods/${mod.slug}/manifests/${release.version}.${artifact.key}.json`
@@ -80,10 +92,24 @@ for (const mod of mods) {
         const manifest = await verifyAndManifest(mod, release, artifact, cacheDir, {
           token,
           log: (m) => console.log(m),
+          keepArtifact: mirrorThis,
         })
         const manifestPath = join(outDir, 'v1', manifestRel)
         mkdirSync(dirname(manifestPath), { recursive: true })
         writeFileSync(manifestPath, JSON.stringify(manifest))
+      }
+      let mirrorRel: string | undefined
+      if (mirrorThis) {
+        mirrorRel = `mods/${mod.slug}/artifacts/${release.version}.${artifact.key}.zip`
+        const cachePath = await ensureArtifactCached(release, artifact, cacheDir, {
+          token,
+          log: (m) => console.log(m),
+        })
+        const mirrorPath = join(outDir, 'v1', mirrorRel)
+        mkdirSync(dirname(mirrorPath), { recursive: true })
+        copyFileSync(cachePath, mirrorPath)
+        mirroredBytes += artifact.size
+        console.log(`  mirrored → v1/${mirrorRel}`)
       }
       const gh = await lookupGithubAsset(artifact.url, token)
       artifacts.push({
@@ -96,6 +122,7 @@ for (const mod of mods) {
         root: artifact.root,
         installAs: artifact.installAs,
         ...(skipArtifacts ? {} : { manifest: manifestRel }),
+        ...(mirrorRel ? { mirror: mirrorRel } : {}),
       })
     }
     releases.push({
@@ -151,6 +178,14 @@ const pages = generateListings(outDir, {
     'everything below is browsable by hand.',
 })
 
+// GitHub Pages sites have a ~1 GB soft budget; make approaching it loud.
+const mirroredMb = mirroredBytes / 1024 / 1024
+if (mirroredBytes > 900 * 1024 * 1024) {
+  console.warn(
+    `::warning::mirrored artifacts total ${mirroredMb.toFixed(0)} MB — approaching the ~1 GB GitHub Pages site budget. Reduce mirror_versions somewhere or shard the mirror.`,
+  )
+}
+
 console.log(
-  `\n✓ wrote ${join(outDir, 'v1', 'index.json')} (${indexMods.length} mods, ${indexMods.reduce((n, m) => n + m.releases.length, 0)} releases, ${pages} listing pages)`,
+  `\n✓ wrote ${join(outDir, 'v1', 'index.json')} (${indexMods.length} mods, ${indexMods.reduce((n, m) => n + m.releases.length, 0)} releases, ${mirroredMb.toFixed(0)} MB mirrored, ${pages} listing pages)`,
 )

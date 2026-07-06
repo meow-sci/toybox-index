@@ -6,3 +6,7 @@ license = "MIT"
 repository = "https://github.com/meow-sci/purrtty"
 tags = ["terminal", "utility", "shell"]
 owners = ["alex-sherwin"]
+# Mirror the newest N releases into the published Pages site so the browser
+# app can download them same-origin (GitHub release URLs are not CORS-
+# fetchable). Registration-level: changes require admin review.
+mirror_versions = 5

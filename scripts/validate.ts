@@ -113,13 +113,21 @@ if (prAuthor && changed.length > 0) {
         verdict = 'new-mod'
         break
       }
-      // Same for the artifact size ceiling: a release PR must not be able to
-      // raise its own limit — max_artifact_bytes is a registration-level
-      // setting, changed only under admin review.
+      // Same for the registration-level resource settings: a release PR must
+      // not be able to raise its own artifact size ceiling or claim more of
+      // the finite Pages mirror budget — admin review only.
       if (headMod && (headMod.maxArtifactBytes ?? null) !== (baseIdentity.maxArtifactBytes ?? null)) {
         console.log(
           `  governance: mods/${slug} max_artifact_bytes changed ` +
             `(${baseIdentity.maxArtifactBytes ?? 'default'} → ${headMod.maxArtifactBytes ?? 'default'}) — human review required`,
+        )
+        verdict = 'new-mod'
+        break
+      }
+      if (headMod && (headMod.mirrorVersions ?? null) !== (baseIdentity.mirrorVersions ?? null)) {
+        console.log(
+          `  governance: mods/${slug} mirror_versions changed ` +
+            `(${baseIdentity.mirrorVersions ?? 0} → ${headMod.mirrorVersions ?? 0}) — human review required`,
         )
         verdict = 'new-mod'
         break

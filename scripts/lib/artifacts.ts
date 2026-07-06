@@ -6,9 +6,10 @@
  * then walks the zip to produce the per-file manifest the app uses for
  * install verification, adoption, and integrity checks.
  *
- * Manifests are cached in cache/manifests/<sha256>.json (content-addressed,
- * persisted between CI runs via actions/cache) so artifacts are downloaded
- * at most once ever.
+ * Manifests are cached in cache/manifests/<sha256>.json and (for mirrored
+ * releases) verified artifact bytes in cache/artifacts/<sha256>.zip — both
+ * content-addressed and persisted between CI runs via actions/cache, so
+ * artifacts are downloaded at most once ever.
  */
 
 import { createHash } from 'node:crypto'
@@ -34,6 +35,10 @@ export interface ArtifactManifest {
 
 export function manifestCachePath(cacheDir: string, sha256: string): string {
   return join(cacheDir, 'manifests', `${sha256}.json`)
+}
+
+export function artifactCachePath(cacheDir: string, sha256: string): string {
+  return join(cacheDir, 'artifacts', `${sha256}.zip`)
 }
 
 const GH_RELEASE_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(.+)$/
@@ -72,23 +77,15 @@ export async function lookupGithubAsset(
 export class ArtifactError extends Error {}
 
 /**
- * Verify one artifact and produce its manifest (from cache when available).
+ * Download an artifact with streaming size enforcement and full digest
+ * verification (cross-checked against GitHub's asset digest when available).
  */
-export async function verifyAndManifest(
-  mod: SourceMod,
+async function downloadVerified(
   release: SourceRelease,
   artifact: SourceArtifact,
-  cacheDir: string,
   opts: { token?: string; log?: (msg: string) => void } = {},
-): Promise<ArtifactManifest> {
+): Promise<Uint8Array> {
   const log = opts.log ?? (() => {})
-  const cached = manifestCachePath(cacheDir, artifact.sha256)
-  if (existsSync(cached)) {
-    log(`  manifest cache hit for ${artifact.url}`)
-    const manifest = JSON.parse(readFileSync(cached, 'utf8')) as ArtifactManifest
-    return { ...manifest, modId: mod.id, version: release.version, artifactKey: artifact.key }
-  }
-
   // Cross-check GitHub's own digest before spending the download, when available.
   const gh = await lookupGithubAsset(artifact.url, opts.token)
   if (gh?.digest) {
@@ -139,6 +136,53 @@ export async function verifyAndManifest(
     throw new ArtifactError(
       `${release.file}: sha256 mismatch for ${artifact.url}: declared ${artifact.sha256}, actual ${digest}`,
     )
+  }
+  return bytes
+}
+
+/**
+ * Ensure the verified artifact bytes exist in the content-addressed cache
+ * (for mirroring into the published site). Returns the cache path.
+ */
+export async function ensureArtifactCached(
+  release: SourceRelease,
+  artifact: SourceArtifact,
+  cacheDir: string,
+  opts: { token?: string; log?: (msg: string) => void } = {},
+): Promise<string> {
+  const path = artifactCachePath(cacheDir, artifact.sha256)
+  if (existsSync(path)) return path
+  const bytes = await downloadVerified(release, artifact, opts)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, bytes)
+  return path
+}
+
+/**
+ * Verify one artifact and produce its manifest (from cache when available).
+ * With keepArtifact, the verified bytes are also stored in the artifact
+ * cache so a subsequent mirror step needs no second download.
+ */
+export async function verifyAndManifest(
+  mod: SourceMod,
+  release: SourceRelease,
+  artifact: SourceArtifact,
+  cacheDir: string,
+  opts: { token?: string; log?: (msg: string) => void; keepArtifact?: boolean } = {},
+): Promise<ArtifactManifest> {
+  const log = opts.log ?? (() => {})
+  const cached = manifestCachePath(cacheDir, artifact.sha256)
+  if (existsSync(cached)) {
+    log(`  manifest cache hit for ${artifact.url}`)
+    const manifest = JSON.parse(readFileSync(cached, 'utf8')) as ArtifactManifest
+    return { ...manifest, modId: mod.id, version: release.version, artifactKey: artifact.key }
+  }
+
+  const bytes = await downloadVerified(release, artifact, opts)
+  if (opts.keepArtifact) {
+    const artifactPath = artifactCachePath(cacheDir, artifact.sha256)
+    mkdirSync(dirname(artifactPath), { recursive: true })
+    writeFileSync(artifactPath, bytes)
   }
 
   const entries = unzipSync(bytes)
