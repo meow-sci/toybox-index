@@ -14,3 +14,10 @@ max_artifact_bytes = 209715200 # 200 MiB
 # Mirror the newest N releases into the published Pages site (same-origin
 # downloads for the browser app). Registration-level: admin-reviewed.
 mirror_versions = 5
+
+# Social permission filter: which mods may declare required/recommends
+# references to this one (regex on mod ids, full-match, case-insensitive;
+# exclusions win). ".*" = anyone.
+[who_can_reference]
+include = [".*"]
+exclude = []

@@ -58,6 +58,12 @@ license = "MIT"
 repository = "https://github.com/you/mymod"
 tags = ["utility"]
 owners = ["your-github-login"]   # who may self-publish releases
+
+# REQUIRED: who may declare required/recommends references to this mod
+# (regex on mod ids, full-match, case-insensitive; exclusions always win).
+[who_can_reference]
+include = [".*"]        # ".*" = anyone (the expected default)
+exclude = []            # e.g. ["SpamPack.*"] to opt out of specific mods
 ```
 
 `releases/1.0.0.toml`:
@@ -109,14 +115,42 @@ Conventions (validated by CI):
   budget, so mirror allocation is rationed by the admin team. Un-mirrored
   releases still work everywhere via the app's guided-download fallback.
 
-Dependencies (optional) map 1:1 onto StarMap semantics plus a version range:
+References to other mods come in two strengths — both are rich entries with
+an id, a semver range, and an optional human description (≤ 400 chars):
 
 ```toml
-[[dependencies]]
+[[required]]           # hard dependency: resolver refuses to install without it
+id = "SomeLib"
+range = "^2.1"
+description = "Provides the physics solver MyMod builds on."
+
+[[recommends]]         # soft suggestion: surfaced in the app, never forced
 id = "purrTTY"
 range = "^1.0"
-optional = true        # StarMap Optional: loads without it, validated when present
+description = "Terminal sessions open inside purrTTY windows when present."
 ```
+
+A release may not reference itself, list the same mod twice, or put one mod
+in both lists.
+
+### who_can_reference — reference permissioning
+
+Mods **self-declare** their references, which historically (see CKAN) let a
+mod pack recommend other mods against those authors' wishes. Every mod here
+must therefore declare who may reference it, via the required
+`[who_can_reference]` table: `include`/`exclude` arrays of regex patterns
+matched (full-match, case-insensitively) against the *referencing* mod's id.
+Exclusions always win when both match; the expected default is
+`include = [".*"]`.
+
+Enforcement happens when the index is built:
+
+- a **disallowed `recommends`** is silently filtered out of the published
+  index (the referencing mod still publishes — the suggestion just doesn't
+  surface);
+- a **disallowed `required`** fails validation — a hard dependency cannot be
+  published against the target author's wishes, so the PR is blocked until
+  the humans sort it out.
 
 ## Governance — how publishing works
 
@@ -140,6 +174,7 @@ else to the admin team.
 
 ```bash
 npm install
+npm test                       # unit tests (node --test)
 npm run validate               # schema + cross-reference checks
 node scripts/validate.ts --artifacts   # + download & verify every artifact
 npm run compile                # build dist/v1 (full)

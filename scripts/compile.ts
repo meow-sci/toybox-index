@@ -40,6 +40,7 @@ import { copyFileSync } from 'node:fs'
 import { loadTree, type SourceMod } from './lib/schema.ts'
 import { ensureArtifactCached, lookupGithubAsset, verifyAndManifest } from './lib/artifacts.ts'
 import { generateListings } from './lib/listing.ts'
+import { allowedRecommends, auditReferences } from './lib/references.ts'
 
 const args = process.argv.slice(2)
 const opt = (name: string): string | undefined => {
@@ -107,6 +108,21 @@ function sortReleases(mod: SourceMod): SourceMod['releases'] {
 }
 
 const mods = loadTree(rootDir)
+
+// who_can_reference enforcement: a disallowed `required` reference must
+// never publish (it would ship broken installs); disallowed `recommends`
+// are filtered out of the compiled index.
+const referenceAudit = auditReferences(mods)
+if (referenceAudit.violations.length > 0) {
+  for (const v of referenceAudit.violations) {
+    console.error(`✖ ${v.file}: ${v.from} requires ${v.to}, disallowed by who_can_reference`)
+  }
+  process.exit(1)
+}
+for (const v of referenceAudit.filteredRecommends) {
+  console.log(`  filtered recommend: ${v.from} → ${v.to} (${v.file}) per who_can_reference`)
+}
+
 const indexMods = []
 let mirroredBytes = 0
 
@@ -174,7 +190,8 @@ for (const mod of mods) {
       ...(release.ksa ? { ksa: release.ksa } : {}),
       ...(release.notes ? { notes: release.notes } : {}),
       ...(releaseReadmePath ? { readmePath: releaseReadmePath } : {}),
-      dependencies: release.dependencies,
+      required: release.required,
+      recommends: allowedRecommends(release, referenceAudit),
       conflicts: release.conflicts,
       artifacts,
     })

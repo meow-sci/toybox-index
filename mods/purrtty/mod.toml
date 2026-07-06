@@ -10,3 +10,10 @@ owners = ["alex-sherwin"]
 # app can download them same-origin (GitHub release URLs are not CORS-
 # fetchable). Registration-level: changes require admin review.
 mirror_versions = 5
+
+# Social permission filter: which mods may declare required/recommends
+# references to this one (regex on mod ids, full-match, case-insensitive;
+# exclusions win). ".*" = anyone.
+[who_can_reference]
+include = [".*"]
+exclude = []

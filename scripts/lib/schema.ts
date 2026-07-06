@@ -43,6 +43,13 @@ export interface SourceMod {
   homepage?: string
   tags: string[]
   owners: string[]
+  /**
+   * REQUIRED social permission filter: regex patterns (matched full,
+   * case-insensitive, against referrer mod IDS — never versions) governing
+   * which mods may declare required/recommends references to this one.
+   * Exclusions always win. The expected default is include = [".*"].
+   */
+  whoCanReference: { include: string[]; exclude: string[] }
   /** Per-registration artifact size ceiling override (bytes). */
   maxArtifactBytes?: number
   /**
@@ -57,6 +64,13 @@ export interface SourceMod {
   releases: SourceRelease[]
 }
 
+/** One cross-mod reference: who, which versions, and why. */
+export interface SourceReference {
+  id: string
+  range: string
+  description?: string
+}
+
 export interface SourceRelease {
   file: string
   version: string
@@ -64,7 +78,10 @@ export interface SourceRelease {
   published?: string
   ksa?: string
   notes?: string
-  dependencies: { id: string; range: string; optional: boolean }[]
+  /** Hard dependencies: resolved into installs, ranges enforced. */
+  required: SourceReference[]
+  /** Soft suggestions: never auto-installed, surfaced in the app. */
+  recommends: SourceReference[]
   conflicts: { id: string; range: string; reason?: string }[]
   artifacts: SourceArtifact[]
 }
@@ -163,6 +180,44 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
     }
     maxArtifactBytes = v
   }
+  const wcr = doc.who_can_reference
+  if (wcr === undefined || wcr === null || typeof wcr !== 'object' || Array.isArray(wcr)) {
+    throw new ValidationError(
+      file,
+      'missing required [who_can_reference] table (use include = [".*"] to allow all mods to reference this one)',
+    )
+  }
+  const wcrObj = wcr as Record<string, unknown>
+  const include = strArray(file, wcrObj, 'include')
+  const exclude = strArray(file, wcrObj, 'exclude')
+  if (include.length === 0) {
+    throw new ValidationError(
+      file,
+      'who_can_reference.include must list at least one pattern (".*" allows all)',
+    )
+  }
+  for (const [key, patterns] of [
+    ['include', include],
+    ['exclude', exclude],
+  ] as const) {
+    for (const pattern of patterns) {
+      if (pattern.length === 0 || pattern.length > 128) {
+        throw new ValidationError(
+          file,
+          `who_can_reference.${key} patterns must be 1–128 characters`,
+        )
+      }
+      try {
+        new RegExp(`^(?:${pattern})$`, 'i')
+      } catch (e) {
+        throw new ValidationError(
+          file,
+          `who_can_reference.${key} pattern ${JSON.stringify(pattern)} is not a valid regex: ${(e as Error).message}`,
+        )
+      }
+    }
+  }
+
   let mirrorVersions: number | undefined
   if (doc.mirror_versions !== undefined && doc.mirror_versions !== null) {
     const v = doc.mirror_versions
@@ -181,6 +236,7 @@ export function parseModToml(file: string, text: string): Omit<SourceMod, 'slug'
     homepage: optString(file, doc, 'homepage'),
     tags: strArray(file, doc, 'tags'),
     owners,
+    whoCanReference: { include, exclude },
     maxArtifactBytes,
     mirrorVersions,
   }
@@ -205,14 +261,43 @@ export function parseReleaseToml(file: string, text: string, modId: string): Sou
     throw new ValidationError(file, `prerelease version "${version}" must use channel = "prerelease"`)
   }
 
-  const deps: SourceRelease['dependencies'] = []
-  for (const d of (doc.dependencies as Record<string, unknown>[] | undefined) ?? []) {
-    const id = req<string>(file, d, 'id', 'string')
-    if (!MOD_ID_RE.test(id)) throw new ValidationError(file, `dependency id "${id}" is invalid`)
-    if (id.toLowerCase() === modId.toLowerCase()) {
-      throw new ValidationError(file, 'a mod cannot depend on itself')
+  if (doc.dependencies !== undefined) {
+    throw new ValidationError(
+      file,
+      'the "dependencies" key was replaced by [[required]] and [[recommends]] tables',
+    )
+  }
+  const parseReferences = (key: 'required' | 'recommends'): SourceReference[] => {
+    const out: SourceReference[] = []
+    const seen = new Set<string>()
+    for (const entry of (doc[key] as Record<string, unknown>[] | undefined) ?? []) {
+      const id = req<string>(file, entry, 'id', 'string')
+      if (!MOD_ID_RE.test(id)) throw new ValidationError(file, `${key} id "${id}" is invalid`)
+      if (id.toLowerCase() === modId.toLowerCase()) {
+        throw new ValidationError(file, `a mod cannot ${key === 'required' ? 'require' : 'recommend'} itself`)
+      }
+      if (seen.has(id.toLowerCase())) {
+        throw new ValidationError(file, `duplicate ${key} entry for "${id}"`)
+      }
+      seen.add(id.toLowerCase())
+      const description = optString(file, entry, 'description')
+      if (description !== undefined && description.length > 400) {
+        throw new ValidationError(file, `${key} description for "${id}" must be ≤ 400 chars`)
+      }
+      out.push({
+        id,
+        range: optString(file, entry, 'range') ?? '*',
+        ...(description !== undefined ? { description } : {}),
+      })
     }
-    deps.push({ id, range: optString(file, d, 'range') ?? '*', optional: d.optional === true })
+    return out
+  }
+  const required = parseReferences('required')
+  const recommends = parseReferences('recommends')
+  for (const r of recommends) {
+    if (required.some((q) => q.id.toLowerCase() === r.id.toLowerCase())) {
+      throw new ValidationError(file, `"${r.id}" cannot be both required and recommended`)
+    }
   }
   const conflicts: SourceRelease['conflicts'] = []
   for (const c of (doc.conflicts as Record<string, unknown>[] | undefined) ?? []) {
@@ -271,7 +356,8 @@ export function parseReleaseToml(file: string, text: string, modId: string): Sou
     published: optString(file, doc, 'published'),
     ksa: optString(file, doc, 'ksa'),
     notes: optString(file, doc, 'notes'),
-    dependencies: deps,
+    required,
+    recommends,
     conflicts,
     artifacts,
   }
@@ -362,10 +448,10 @@ export function loadTree(rootDir: string): SourceMod[] {
     }
   }
 
-  // Cross-mod checks: dependency/conflict targets should exist in the index.
+  // Cross-mod checks: reference/conflict targets should exist in the index.
   for (const m of mods) {
     for (const rel of m.releases) {
-      for (const d of [...rel.dependencies, ...rel.conflicts]) {
+      for (const d of [...rel.required, ...rel.recommends, ...rel.conflicts]) {
         if (!seenIds.has(d.id.toLowerCase())) {
           throw new ValidationError(
             rel.file,

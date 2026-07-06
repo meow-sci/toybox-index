@@ -23,6 +23,7 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import process from 'node:process'
 import { loadTree, parseModToml, ValidationError } from './lib/schema.ts'
 import { verifyAndManifest } from './lib/artifacts.ts'
+import { auditReferences } from './lib/references.ts'
 
 const args = process.argv.slice(2)
 const flag = (name: string) => args.includes(name)
@@ -60,6 +61,31 @@ try {
   throw e
 }
 console.log(`✓ schema: ${mods.length} mods, ${mods.reduce((n, m) => n + m.releases.length, 0)} releases`)
+
+// ---------------------------------------------------------------------------
+// 1b. Cross-mod reference permissions (who_can_reference)
+// ---------------------------------------------------------------------------
+
+const audit = auditReferences(mods)
+for (const v of audit.filteredRecommends) {
+  console.log(
+    `::warning::${v.file}: ${v.from} recommends ${v.to}, but ${v.to}'s who_can_reference ` +
+      `disallows it — the reference will be FILTERED from the published index`,
+  )
+}
+if (audit.violations.length > 0) {
+  for (const v of audit.violations) {
+    console.error(
+      `✖ ${v.file}: ${v.from} REQUIRES ${v.to}, but ${v.to}'s who_can_reference disallows it. ` +
+        'A hard dependency cannot be published against the target author\'s wishes — ' +
+        'resolve this with the other author (or the admin team).',
+    )
+  }
+  process.exit(1)
+}
+console.log(
+  `✓ references: ${audit.violations.length} violations, ${audit.filteredRecommends.length} recommends filtered`,
+)
 
 // ---------------------------------------------------------------------------
 // 2. Governance (auto-merge eligibility) when PR context is provided
