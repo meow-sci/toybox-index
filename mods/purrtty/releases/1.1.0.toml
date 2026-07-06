@@ -2,6 +2,11 @@ version = "1.1.0"
 channel = "stable"
 published = "2026-07-04T16:21:00Z"
 
+[[recommends]]
+id = "gatOS"
+range = "^1"
+description = "A real Linux flight computer that runs its shell sessions inside purrTTY terminals — the showcase pairing."
+
 [[artifacts]]
 key = "universal"
 platforms = ["*"]
